@@ -16,7 +16,8 @@ let pinMap=null,pinMarkers=[],pinReady=false;const pinColors={"Food":"#c0392b","
  }catch(e){label.textContent="Impossible d’afficher le fond de carte : "+e.message;return}
  const bounds=[];let done=0,failed=0;
  label.textContent="Carte affichée · chargement rapide des adresses…";
- const jobs=places.map(async p=>{
+ const jobs=[...places];
+ async function locate(p){
   try{
    const key="nygeo:"+p[1];let xy=null;
    try{const cached=localStorage.getItem(key);if(cached)xy=JSON.parse(cached)}catch(e){}
@@ -38,9 +39,9 @@ let pinMap=null,pinMarkers=[],pinReady=false;const pinColors={"Food":"#c0392b","
    }else{failed++}
   }catch(e){failed++}
   done++;label.textContent="Carte affichée · adresses traitées : "+done+" / "+places.length;
- });
- // Quatre recherches simultanées : bien plus rapide sans saturer le service de géocodage.
- const workers=Array.from({length:4},async()=>{while(jobs.length){const job=jobs.shift();if(job)await job}});
+ }
+ // Quatre recherches simultanées : bien plus rapide sans saturer le service.
+ const workers=Array.from({length:4},async()=>{while(jobs.length){const p=jobs.shift();if(p)await locate(p)}});
  await Promise.all(workers);
  if(bounds.length)pinMap.fitBounds(bounds,{padding:[18,18],maxZoom:13});
  pinReady=true;refreshPinFilter();
