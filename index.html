@@ -14,9 +14,9 @@ let pinMap=null,pinMarkers=[],pinReady=false;const pinColors={"Food":"#c0392b","
   window.addEventListener("resize",()=>pinMap&&pinMap.invalidateSize());
   window.addEventListener("pageshow",()=>setTimeout(()=>pinMap&&pinMap.invalidateSize(),250));
  }catch(e){label.textContent="Impossible d’afficher le fond de carte : "+e.message;return}
- const bounds=[];let done=0;
- label.textContent="Carte affichée · chargement des adresses…";
- for(const p of places){
+ const bounds=[];let done=0,failed=0;
+ label.textContent="Carte affichée · chargement rapide des adresses…";
+ const jobs=places.map(async p=>{
   try{
    const key="nygeo:"+p[1];let xy=null;
    try{const cached=localStorage.getItem(key);if(cached)xy=JSON.parse(cached)}catch(e){}
@@ -29,20 +29,22 @@ let pinMap=null,pinMarkers=[],pinReady=false;const pinColors={"Food":"#c0392b","
      const c=data.features[0].geometry.coordinates;xy=[c[1],c[0]];
      try{localStorage.setItem(key,JSON.stringify(xy))}catch(e){}
     }
-    await new Promise(ok=>setTimeout(ok,350));
    }
    if(xy){
     const color=pinColors[p[2]]||"#555";
     const marker=L.circleMarker(xy,{radius:7,color:"#fff",weight:2,fillColor:color,fillOpacity:.95})
      .bindPopup('<b>'+p[0]+'</b><br>'+p[1]+'<br><a target="_blank" href="https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(p[1])+'&travelmode=walking">Ouvrir l’itinéraire Google Maps</a>');
     pinMarkers.push({marker,kind:p[2]});marker.addTo(pinMap);bounds.push(xy);
-   }
-  }catch(e){}
-  done++;label.textContent="Carte affichée · adresses localisées : "+done+" / "+places.length;
- }
+   }else{failed++}
+  }catch(e){failed++}
+  done++;label.textContent="Carte affichée · adresses traitées : "+done+" / "+places.length;
+ });
+ // Quatre recherches simultanées : bien plus rapide sans saturer le service de géocodage.
+ const workers=Array.from({length:4},async()=>{while(jobs.length){const job=jobs.shift();if(job)await job}});
+ await Promise.all(workers);
  if(bounds.length)pinMap.fitBounds(bounds,{padding:[18,18],maxZoom:13});
  pinReady=true;refreshPinFilter();
- label.textContent=pinMarkers.length+" repères affichés sur la carte · touche un point pour ouvrir son itinéraire";
+ label.textContent=pinMarkers.length+" repères affichés sur la carte"+(failed?" · "+failed+" adresse(s) non localisée(s)":"")+" · positions mémorisées sur cet appareil";
  setTimeout(()=>pinMap&&pinMap.invalidateSize(),300);
 };let cat="Tout",fav=new Set(JSON.parse(localStorage.getItem("nyFav")||"[]"));const cats=["Tout",...new Set(places.map(x=>x[2]))];cats.forEach(c=>{let b=document.createElement("button");b.textContent=c;b.onclick=()=>{cat=c;document.querySelectorAll(".filters button").forEach(x=>x.classList.remove("on"));b.classList.add("on");render();if(pinReady)refreshPinFilter()};if(c=="Tout")b.classList.add("on");filters.append(b)});
 function render(){let q=document.querySelector("#q").value.toLowerCase(),a=places.filter(x=>(cat=="Tout"||x[2]==cat)&&x.join(" ").toLowerCase().includes(q));status.textContent=a.length+" adresse"+(a.length>1?"s":"")+" dans le carnet";list.innerHTML=a.length?a.map((p,i)=>{let k=p[0]+"|"+p[1];return '<article class="card"><div class="row"><div class="name">'+p[0]+'</div><div class="tag">'+p[2]+'</div></div><div class="addr">'+p[1]+'</div><div class="actions"><a class="map" target="_blank" href="https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(p[1])+'&travelmode=walking">🧭 Itinéraire</a><button class="fav" data-i="'+i+'">'+(fav.has(k)?"★ Favori":"☆ Ajouter")+'</button></div></article>'}).join(""):'<div class="empty">Aucun résultat.</div>';document.querySelectorAll("[data-i]").forEach(b=>b.onclick=()=>{let p=a[+b.dataset.i],k=p[0]+"|"+p[1];fav.has(k)?fav.delete(k):fav.add(k);localStorage.setItem("nyFav",JSON.stringify([...fav]));render()})}
